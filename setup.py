@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="redisevents", 
-    version="0.0.1",
+    version="0.0.2",
     author="Grayden Shand",
     author_email="graydenshand@gmail.com",
     description="A small package for building a microservice event system in python with redis",

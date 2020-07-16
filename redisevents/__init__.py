@@ -1,1 +1,1 @@
-from redisevents import Worker, Producer, Event
+from .redisevents import Worker, Producer, Event

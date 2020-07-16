@@ -1,7 +1,7 @@
 import redis
 from datetime import datetime
 import functools
-from config import redis_url
+from .config import redis_url
 
 class Worker:
 	# streams = {
