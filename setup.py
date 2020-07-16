@@ -11,7 +11,7 @@ setuptools.setup(
     description="A small package for building a microservice event system in python with redis",
     long_description=long_description,
     long_description_content_type="text/markdown",
-    url="",
+    url="https://github.com/graydenshand/redisevents",
     packages=setuptools.find_packages(),
     classifiers=[
         "Programming Language :: Python :: 3",
