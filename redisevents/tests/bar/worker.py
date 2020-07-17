@@ -17,5 +17,4 @@ def handle_test():
 	return Bar().bar_action()
 
 if __name__ == "__main__":
-	print(worker._events)
 	worker.listen()

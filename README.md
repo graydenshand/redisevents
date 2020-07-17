@@ -30,7 +30,7 @@ def test(foo, test=False):
     print('tested')
 
 if __name__ == "__main__":
-  worker.listen(host='127.0.0.1', port=6379, db=0)
+  worker.listen()
 
 ```
 In the first line, we initialize the Worker class. Then we register functions as event listeners using the `@worker.on()` wrapper function. `@worker.on()` takes two parameters, `stream` and `action`. These two parameters uniquely define an event that will be sent by a producer. When this event is delivered to redis, this worker will envoke the `test()` function. In essence, this is similar to how you would set up a simple web application in Flask. However, instead of definining HTTP endpoints to route, you define a set of events to route. 
