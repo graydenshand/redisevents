@@ -11,7 +11,7 @@ pip install redisevents
 # Usage
 There are three classes in this module: [Producer](#producer), [Worker](#worker), and [Event](#event).
 
-A Worker listens for Events sent by a Producer, and will envoke functions depending on the events set.
+A Worker listens for Events sent by a Producer, and will envoke functions depending on the events sent.
 
 ## Configuration
 The only thing to configure is the connection string for your redis server. It defaults to `redis://localhost:6379`, but you can change this by setting your `REDIS_URL` environment variable.
@@ -127,8 +127,10 @@ Register event callbacks, and listen for events. See [Example Worker](#example-w
 ### Methods
 **register_event**(*`stream, action, func`*)
 * Register a callback function for an event with a given stream and action.
+
 **on**(*`stream, action`*)
 * Wrapper function that calls `register_event` internally. This usually results in cleaner code that using the function inline.
+
 **listen**()
 * Runs the main event loop, listening for events and envoking the mapped callback functions. 
 
