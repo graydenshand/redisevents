@@ -2,6 +2,7 @@ import redis
 from datetime import datetime
 import functools
 from .config import redis_url
+import json
 
 class Worker:
 	# streams = {
@@ -14,16 +15,16 @@ class Worker:
 		self._events = {}
 
 
-	def on(self, stream, action, **options):
+	def on(self, stream, action):
 		"""
 		Wrapper to register a function to an event
 		"""
 		def decorator(func):
-			self.register_event(stream, action, func, **options)
+			self.register_event(stream, action, func)
 			return func
 		return decorator
 
-	def register_event(self, stream, action, func, **options):
+	def register_event(self, stream, action, func):
 		"""
 		Map an event to a function
 		"""
@@ -39,10 +40,11 @@ class Worker:
 		Wait for events from the specified streams
 		Dispatch to appropriate event handler
 		"""
-		self._r = redis.Redis(redis_url)
-		streams = " ".join(self._events.keys())
+		self._r = redis.Redis.from_url(redis_url)
+		streams = {key: "$" for key in self._events.keys()}
+		print(streams)
 		while True:
-			event = self._r.xread({streams: "$"}, None, 0) 
+			event = self._r.xread(streams, None, 0) 
 			# Call function that is mapped to this event
 			self._dispatch(event)
 
@@ -79,16 +81,17 @@ class Event():
 		self.action = self.data.pop(b'action').decode('utf-8')
 		params = {}
 		for k, v in self.data.items():
-			params[k.decode('utf-8')] = v.decode('utf-8')
+			params[k.decode('utf-8')] = json.loads(v.decode('utf-8'))
 		self.data = params
 
-	def publish(self, r):
+	def publish(self, redis_conn):
 		body = {
 			"action": self.action
 		}
 		for k, v in self.data.items():
-			body[k] = v
-		r.xadd(self.stream, body)
+			body[k] = json.dumps(v, default=str)
+
+		redis_conn.xadd(self.stream, body)
 
 
 
@@ -101,15 +104,15 @@ class Producer:
 	# stream = None
 	# _r = redis.Redis(host="localhost", port=6379, db=0)
 
-	def __init__(self):
-		self.stream = stream_name
-		self._r = redis.Redis(redis_url)
+	def __init__(self, stream):
+		self.stream = stream
+		self._r = redis.Redis.from_url(redis_url)
 
-	def send_event(self, action, data):
+	def send_event(self, action, data={}):
 		e = Event(stream=self.stream, action=action, data=data)
 		e.publish(self._r)
 
-	def event(self, action, data={}):
+	def event(self, action):
 		def decorator(func):
 			@functools.wraps(func)
 			def wrapped(*args, **kwargs):

@@ -5,14 +5,14 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="redisevents", 
-    version="0.0.5",
+    version="0.0.8",
     author="Grayden Shand",
     author_email="graydenshand@gmail.com",
     description="A small package for building a microservice event system in python with redis",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/graydenshand/redisevents",
-    packages=setuptools.find_packages(),
+    packages=setuptools.find_packages(exclude=['tests*']),
     install_requires=[
         "redis"
     ],
