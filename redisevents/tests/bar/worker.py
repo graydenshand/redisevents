@@ -1,14 +1,11 @@
 from redisevents.redisevents import Worker
 from .bar import Bar
 
-worker = Worker()
+worker = Worker("bar")
 
 @worker.on('foo', "update")
-def test(test):
-	if bool(test) == False:
-		print('test')
-	else:
-		print('tested')
+def test():
+	print('tested')
 
 
 @worker.on('test', 'initiate')

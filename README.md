@@ -20,7 +20,7 @@ The only thing to configure is the connection string for your redis server. It d
 Here's a simple example of a worker module.
 ```{python}
 # worker.py
-worker = Worker()
+worker = Worker("bar")
 
 @worker.on('bar', "update")
 def test(foo, test=False):
@@ -33,7 +33,9 @@ if __name__ == "__main__":
   worker.listen()
 
 ```
-In the first line, we initialize the Worker class. Then we register functions as event listeners using the `@worker.on()` wrapper function. `@worker.on()` takes two parameters, `stream` and `action`. These two parameters uniquely define an event that will be sent by a producer. When this event is delivered to redis, this worker will envoke the `test()` function. In essence, this is similar to how you would set up a simple web application in Flask. However, instead of definining HTTP endpoints to route, you define a set of events to route. 
+In the first line, we initialize the Worker class with the name "bar". Under the hood, this module uses redis ConsumerGroups to process a stream in parallel. This means, you can run another copy of this worker (either in a separate terminal window, or on another server/container), and all instances of this worker will coordinate in processing streams. This avoids processing events twice when running multiple workers, and allows you to scale your architecture without changing your code. 
+
+After initializing the class, we register functions as event listeners using the `@worker.on()` wrapper function. `@worker.on()` takes two parameters, `stream` and `action`. These two parameters uniquely define an event that will be sent by a producer. When this event is delivered to redis, this worker will envoke the `test()` function. In essence, this is similar to how you would set up a simple web application in Flask. However, instead of definining HTTP endpoints to route, you define a set of events to route. 
 
 Finally, the last two lines of the file run the event loop that listens for the events specified above, and calls the functions we have mapped to those events. 
 
@@ -122,7 +124,11 @@ def bar_action(self, foo, **kwargs)
 ```
 
 ## Worker
+*class* **Worker**(*`name`*)
 Register event callbacks, and listen for events. See [Example Worker](#example-worker) for an example. 
+
+### Attributes
+**name** *&lt;str&gt;* -- a name for this worker type. All duplicate processes of this worker will share this name and participate in the same redis ConsumerGroup to process events.
 
 ### Methods
 **register_event**(*`stream, action, func`*)

@@ -1,23 +1,38 @@
 import redis
+from redis.exceptions import ResponseError
 from datetime import datetime
 import functools
-from .config import redis_url
+from .config import redis_url, pending_event_timeout, worker_timeout
 import json
+import uuid
 
 class Worker:
-	# streams = {
+	# self._evnets = {
 	# 	"bar": {
 	# 		"update": Foo.foo_action
 	# 	},
+	# 	"stream": {
+	# 		"action": func
+	# 	}
 	# }
 
-	def __init__(self):
+	def __init__(self, name):
+		"""
+		name: string name for consumer group
+		"""
 		self._events = {}
+		self.name = name
 
 
 	def on(self, stream, action):
 		"""
 		Wrapper to register a function to an event
+
+		Usage:
+		@worker.on("foo", "bar")
+		def foo_bar_handler(arg1, arg2, kwarg1=val):
+			...
+
 		"""
 		def decorator(func):
 			self.register_event(stream, action, func)
@@ -26,7 +41,12 @@ class Worker:
 
 	def register_event(self, stream, action, func):
 		"""
-		Map an event to a function
+		Map an event (stream + action) to a function
+
+		Usage:
+		def foo_bar_handler(arg1, arg2, kwarg1=val):
+			...
+		worker.register_event("foo", "bar", foo_bar_handler)
 		"""
 		if stream in self._events.keys():
 			self._events[stream][action] = func
@@ -35,30 +55,98 @@ class Worker:
 
 	def listen(self):
 		"""	
-		Main event loop
-		Establish redis connection from passed parameters
-		Wait for events from the specified streams
-		Dispatch to appropriate event handler
+		- - Main Event Loop - -
+		Establish redis connection
+		Create consumer group if it doesn't already exist
+		Generate a unique string to set as consumer/worker id
+		Claim and handleany pending events from idle/failed workers
+		Delete records of idle/failed workers
+		Run forever:
+			Wait for an event from the specified streams
+			Dispatch to appropriate event handler
+			Claim and handle any pending events from idle/failed workers
 		"""
 		self._r = redis.Redis.from_url(redis_url)
-		streams = {key: "$" for key in self._events.keys()}
-		print(streams)
+		self._create_consumer_group()
+		streams = {key: ">" for key in self._events.keys()}
+		self._generate_worker_id()
+		self._claim_and_handle_pending_events()
+			self._clear_idle_workers()
 		while True:
-			event = self._r.xread(streams, None, 0) 
-			# Call function that is mapped to this event
+			event = self._r.xreadgroup(self.name, self._worker_id, streams, 1, 0)
 			self._dispatch(event)
+			self._claim_and_handle_pending_events()
 
 	def _dispatch(self, event):
 		"""
 		Call a function given an event
 
 		If the event has been registered, the registered function will be called with the passed params.
+		
+		After running function, acknowledge the event has been processed. 
 		"""
 		e = Event(event=event)
 		if e.action in self._events[e.stream].keys():
 			func = self._events[e.stream][e.action]
 			print(f"{datetime.now()} - Stream: {e.stream} - {e.event_id}: {e.action} {e.data}")
-			return func(**e.data)
+			self._r.xack(e.stream, self.name, e.event_id)
+			result = func(**e.data)
+			return result
+
+	def _create_consumer_group(self):
+		"""
+		Create consumer groups for specified streams
+
+		Indempotent, fails silently if groups already createed
+		"""	
+		for key in self._events.keys():
+			try:
+				# check if stream exists already
+				self._r.xinfo_stream(key)
+				mkstream = False
+			except ResponseError:
+				mkstream = True
+			try:
+				self._r.xgroup_create(key, self.name,id=u'$', mkstream=mkstream)
+			except ResponseError:
+				pass
+
+	def _generate_worker_id(self):
+		"""
+		Create a unique name for this worker to register with the redis consumer group
+		"""
+		self._worker_id = self.name + f"-{uuid.uuid4()}"
+		print(self._worker_id)
+		return self._worker_id
+
+	def _claim_and_handle_pending_events(self):
+		"""
+		Claim pending events that have been idle for > 30 secods, process immediately.
+
+		Delete workers that appear to have stalled permanently (12 hours)
+		"""
+		for k in self._events.keys():
+			pending_events = self._r.xpending_range(k, self.name, min="-", max="+", count=1000)
+			if len(pending_events) > 0:
+				event_ids = [event['message_id'] for event in pending_events]
+				self._r.xclaim(k, self.name, self._worker_id, pending_event_timeout, event_ids)
+				streams = {key: "0" for key in self._events.keys()}
+				pending_events = self._r.xreadgroup(self.name, self._worker_id, streams, None, 0)
+				for stream in pending_events:
+					for event in stream[1]:
+						formatted_event = [[stream[0], [event]]]
+						self._dispatch(formatted_event)
+		
+	def _clear_idle_workers(self):	
+		"""
+		Delete consumers from redis consumergroups that have been idle
+		for longer than WORKER_TIMEOUT milliseconds.
+		"""
+		for k in self._events.keys():
+			existing_workers = self._r.xinfo_consumers(k, self.name)
+			for worker in existing_workers:
+				if worker['idle'] > worker_timeout:
+					self._r.xgroup_delconsumer(k, self.name, worker['name'])
 
 
 class Event():
@@ -74,6 +162,9 @@ class Event():
 			self.parse_event(event)
 
 	def parse_event(self, event):
+		"""
+		Given a redis event, create an Event object
+		"""
 		# event = [[b'bar', [(b'1594764770578-0', {b'action': b'update', b'test': b'True'})]]]
 		self.stream = event[0][0].decode('utf-8')
 		self.event_id = event[0][1][0][0].decode('utf-8')
@@ -85,6 +176,9 @@ class Event():
 		self.data = params
 
 	def publish(self, redis_conn):
+		"""
+		Given a redis connection, publish this event
+		"""
 		body = {
 			"action": self.action
 		}
@@ -109,10 +203,25 @@ class Producer:
 		self._r = redis.Redis.from_url(redis_url)
 
 	def send_event(self, action, data={}):
+		"""
+		Create an event and publish it to this producer's stream
+		"""
 		e = Event(stream=self.stream, action=action, data=data)
 		e.publish(self._r)
 
 	def event(self, action):
+		"""
+		Wrap a function, declaring it as an event.
+
+		An event with the specified action (along with any args and kwargs of the wrapped function)
+		is published after the wrapped function runs
+
+		Usage
+		@producer.event('update')
+		def some_action(arg1, arg2, kwarg1=val):
+			...
+
+		"""
 		def decorator(func):
 			@functools.wraps(func)
 			def wrapped(*args, **kwargs):
@@ -132,7 +241,7 @@ class Producer:
 ###### DEMO #########
 #####################
 
-worker = Worker()
+worker = Worker("foo-bar")
 
 @worker.on('bar', "update")
 def test(test):

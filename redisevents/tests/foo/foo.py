@@ -16,6 +16,7 @@ class Foo:
 
 	ep = Producer("foo")
 
+	@ep.event("update")
 	@classmethod
 	def foo_action(cls):
 		"""
