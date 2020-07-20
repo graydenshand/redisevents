@@ -71,7 +71,7 @@ class Worker:
 		streams = {key: ">" for key in self._events.keys()}
 		self._generate_worker_id()
 		self._claim_and_handle_pending_events()
-			self._clear_idle_workers()
+		self._clear_idle_workers()
 		while True:
 			event = self._r.xreadgroup(self.name, self._worker_id, streams, 1, 0)
 			self._dispatch(event)
@@ -116,7 +116,6 @@ class Worker:
 		Create a unique name for this worker to register with the redis consumer group
 		"""
 		self._worker_id = self.name + f"-{uuid.uuid4()}"
-		print(self._worker_id)
 		return self._worker_id
 
 	def _claim_and_handle_pending_events(self):
