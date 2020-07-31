@@ -2,9 +2,11 @@ import redis
 from redis.exceptions import ResponseError
 from datetime import datetime
 import functools
-from .config import redis_url, pending_event_timeout, worker_timeout
+from .config import redis_url, max_stream_length
 import json
 import uuid
+
+
 
 class Worker:
 	# self._evnets = {
@@ -15,6 +17,9 @@ class Worker:
 	# 		"action": func
 	# 	}
 	# }
+
+	pending_event_timeout, worker_timeout = 30000, 30000 # 30 seconds
+
 
 	def __init__(self, name):
 		"""
@@ -75,7 +80,6 @@ class Worker:
 		while True:
 			event = self._r.xreadgroup(self.name, self._worker_id, streams, 1, 0)
 			self._dispatch(event)
-			self._claim_and_handle_pending_events()
 
 	def _dispatch(self, event):
 		"""
@@ -83,7 +87,7 @@ class Worker:
 
 		If the event has been registered, the registered function will be called with the passed params.
 		
-		After running function, acknowledge the event has been processed. 
+		Before running function, acknowledge the event has been processed, so no multiple workers don't duplicate work. 
 		"""
 		e = Event(event=event)
 		if e.action in self._events[e.stream].keys():
@@ -128,7 +132,7 @@ class Worker:
 			pending_events = self._r.xpending_range(k, self.name, min="-", max="+", count=1000)
 			if len(pending_events) > 0:
 				event_ids = [event['message_id'] for event in pending_events]
-				self._r.xclaim(k, self.name, self._worker_id, pending_event_timeout, event_ids)
+				self._r.xclaim(k, self.name, self._worker_id, self.pending_event_timeout, event_ids)
 				streams = {key: "0" for key in self._events.keys()}
 				pending_events = self._r.xreadgroup(self.name, self._worker_id, streams, None, 0)
 				for stream in pending_events:
@@ -144,7 +148,7 @@ class Worker:
 		for k in self._events.keys():
 			existing_workers = self._r.xinfo_consumers(k, self.name)
 			for worker in existing_workers:
-				if worker['idle'] > worker_timeout:
+				if worker['idle'] > self.worker_timeout:
 					self._r.xgroup_delconsumer(k, self.name, worker['name'])
 
 
@@ -184,7 +188,7 @@ class Event():
 		for k, v in self.data.items():
 			body[k] = json.dumps(v, default=str)
 
-		redis_conn.xadd(self.stream, body)
+		redis_conn.xadd(self.stream, body, maxlen=max_stream_length) # maxlen truncates stream after adding new event
 
 
 

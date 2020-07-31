@@ -14,7 +14,9 @@ There are three classes in this module: [Producer](#producer), [Worker](#worker)
 A Worker listens for Events sent by a Producer, and will envoke functions depending on the events sent.
 
 ## Configuration
-The only thing to configure is the connection string for your redis server. It defaults to `redis://localhost:6379`, but you can change this by setting your `REDIS_URL` environment variable.
+Set environment varialbes to override the package defaults:
+* **RE_REDIS_URL** &mdash; *redis://localhost:6379*
+* **RE_MAX_STREAM_LENGTH** &mdash; *1000 (Truncate streams to appx 1000 events)*
 
 ## Example Worker
 Here's a simple example of a worker module.
